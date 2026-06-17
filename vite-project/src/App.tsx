@@ -1,11 +1,12 @@
-import {
-    fetchRfqs,
-    subscribeToQuoteUpdates,
-} from '../mock-api';
+import {fetchRfqs, subscribeToQuoteUpdates,} from '../mock-api';
 import {useEffect, useState} from "react";
 import {RFQCardRow} from "./components/RFQCardRow.tsx";
 import type {Rfq} from "./types/rfq.ts";
 import {isTradeable} from "./helpers/isTradeable.ts";
+
+function updateRFQ(rfqsToUpdate: Rfq[], rfq: Rfq) {
+
+}
 
 function getLastUpdatedInSeconds(ISOString: string | undefined) {
     if (!ISOString) return "-";
@@ -25,9 +26,23 @@ function App() {
             setRfqs(rfqs);
             setLoading(false);
 
-            // const unsubscribe = subscribeToQuoteUpdates((update) => {
-            //     console.log('live update', update);
-            // });
+            return subscribeToQuoteUpdates((update) => {
+                const updatedRfqs = rfqs.map((rfq) => {
+                    if (rfq.id === update.rfqId) {
+                        return {
+                            ...rfq,
+                            bid: update.bid ?? rfq.bid,
+                            offer: update.offer ?? rfq.offer,
+                            status: update.status ?? rfq.status,
+                            lastUpdated: update.lastUpdated,
+                            sequenceNumber: update.sequenceNumber,
+                        }
+                    }
+                    return rfq;
+                });
+
+                setRfqs(updatedRfqs);
+            });
         }
 
         initRFQS();
@@ -72,8 +87,8 @@ function App() {
                                 <span>{rfq.sequenceNumber}</span>
                             </RFQCardRow>
                         </div>
-                        <button disabled={isTradeable(rfq)}
-                            className="mt-4 w-full rounded-md bg-primary px-4 py-2 text-white hover:opacity-90 cursor-pointer">
+                        <button disabled={!isTradeable(rfq)}
+                            className="mt-4 w-full rounded-md bg-primary px-4 py-2 text-white hover:opacity-90 not-disabled:cursor-pointer disabled:opacity-50">
                             Accept Quote
                         </button>
                     </div>
