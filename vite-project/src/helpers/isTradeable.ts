@@ -1,6 +1,6 @@
 import {isExpired} from "./isExpired";
-import {Rfq} from "../types/rfq";
+import type {Rfq} from "../types/rfq.ts";
 
-export function isTradeable(rfq: Rfq) {
-    return rfq.status === "Quoted" && rfq.bid && rfq.offer && !isExpired(rfq.expiry);
+export function isTradeable(rfq: Rfq): boolean {
+    return rfq.status === "Quoted" && rfq.bid !== undefined && rfq.offer !== undefined && !isExpired(rfq.expiry);
 }

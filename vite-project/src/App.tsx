@@ -5,6 +5,7 @@ import {
 import {useEffect, useState} from "react";
 import {RFQCardRow} from "./components/RFQCardRow.tsx";
 import type {Rfq} from "./types/rfq.ts";
+import {isTradeable} from "./helpers/isTradeable.ts";
 
 function getLastUpdatedInSeconds(ISOString: string | undefined) {
     if (!ISOString) return "-";
@@ -71,7 +72,8 @@ function App() {
                                 <span>{rfq.sequenceNumber}</span>
                             </RFQCardRow>
                         </div>
-                        <button className="mt-4 w-full rounded-md bg-primary px-4 py-2 text-white hover:opacity-90 cursor-pointer">
+                        <button disabled={isTradeable(rfq)}
+                            className="mt-4 w-full rounded-md bg-primary px-4 py-2 text-white hover:opacity-90 cursor-pointer">
                             Accept Quote
                         </button>
                     </div>
