@@ -21,3 +21,12 @@
     --color-status-rejected: #ef4444;
     --color-status-expired: #f59e0b;
 }
+
+@keyframes slide-in-from-left {
+    from {
+        transform: translateX(-100%);
+    }
+    to {
+        transform: translateX(0);
+    }
+}
