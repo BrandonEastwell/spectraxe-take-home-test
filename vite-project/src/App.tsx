@@ -1,19 +1,19 @@
-import {fetchRfqs, subscribeToQuoteUpdates,} from '../mock-api';
-import {useEffect, useState} from "react";
-import {RFQCardRow} from "./components/RFQCardRow.tsx";
+import {acceptQuote, fetchRfqs, subscribeToQuoteUpdates,} from '../mock-api';
+import {useEffect, useMemo, useState} from "react";
 import type {Rfq} from "./types/rfq.ts";
-import {isTradeable} from "./helpers/isTradeable.ts";
 import type {Filters} from "./types/filters.ts";
 import FilterSideBar from "./components/FilterSideBar.tsx";
 import type {Sort} from "./types/sort.ts";
-import {SORT_OPTIONS} from "./constants/sortOptions.ts";
-
-function getLastUpdatedInSeconds(ISOString: string): number {
-    const date = new Date(ISOString);
-    const timeNow = new Date();
-    const diff = timeNow.getTime() - date.getTime();
-    return Math.floor(diff / 1000);
-}
+import {AcceptQuoteModal} from "./components/AcceptQuoteModal.tsx";
+import type {AcceptFeedback} from "./types/acceptFeedback.ts";
+import {updateRfq} from "./helpers/updateRfq.ts";
+import {filterRfqs} from "./helpers/filterRfqs.ts";
+import {sortRfqs} from "./helpers/sortRfqs.ts";
+import {getQuoteStatusMessage} from "./helpers/getQuoteStatusMessage.ts";
+import {AcceptFeedbackMessage} from "./components/AcceptFeedbackMessage.tsx";
+import {QuoteToolbar} from "./components/QuoteToolbar.tsx";
+import {RFQCardGrid} from "./components/RFQCardGrid.tsx";
+import {RFQTable} from "./components/RFQTable.tsx";
 
 function App() {
     const [loading, setLoading] = useState(true);
@@ -21,122 +21,115 @@ function App() {
     const [showFilters, setShowFilters] = useState(false);
     const [filters, setFilters] = useState<Filters>({actionableOnly: false});
     const [sortOrder, setSortOrder] = useState<Sort | undefined>(undefined);
+    const [selectedRfq, setSelectedRfq] = useState<Rfq | undefined>(undefined);
+    const [acceptingRfqId, setAcceptingRfqId] = useState<string | undefined>(undefined);
+    const [acceptFeedback, setAcceptFeedback] = useState<AcceptFeedback | undefined>(undefined);
 
     useEffect(() => {
-        const initRFQS = async () => {
-            const rfqs: Rfq[] = await fetchRfqs();
-            setRfqs(rfqs);
-            setLoading(false);
+        let unsubscribe: (() => void) | undefined;
+        let isMounted = true;
 
-            return subscribeToQuoteUpdates((update) => {
-                const updatedRfqs = rfqs.map((rfq) => {
-                    if (rfq.id === update.rfqId) {
-                        return {
-                            ...rfq,
-                            bid: update.bid ?? rfq.bid,
-                            offer: update.offer ?? rfq.offer,
-                            status: update.status ?? rfq.status,
-                            lastUpdated: update.lastUpdated,
-                            sequenceNumber: update.sequenceNumber,
-                        }
-                    }
-                    return rfq;
+        const initRFQS = async () => {
+            try {
+                const rfqs: Rfq[] = await fetchRfqs();
+                if (!isMounted) return;
+
+                setRfqs(rfqs);
+                setLoading(false);
+
+                unsubscribe = subscribeToQuoteUpdates((update) => {
+                    setRfqs((currentRfqs) => currentRfqs.map((rfq) => {
+                        return updateRfq(rfq, update)
+                    }));
                 });
 
-                setRfqs(updatedRfqs);
-            });
+            } catch {
+                if (!isMounted) return;
+                setLoading(false);
+                setAcceptFeedback({ type: "error", message: "Failed to load RFQs. Please try again." });
+            }
         }
 
         initRFQS();
-    }, [])
+        return () => {
+            isMounted = false;
+            unsubscribe?.();
+        };
+    }, []);
 
-    const filteredRfqs = rfqs.filter((rfq) => {
-        if (filters.actionableOnly && !isTradeable(rfq)) return false;
-        if (filters.currencyQuote && filters.currencyBase && (filters.currencyBase + "/" + filters.currencyQuote) !== rfq.currencyPair) return false;
-        if (filters.status && rfq.status !== filters.status) return false;
-        return true;
-    })
+    const handleRequestAccept = (rfq: Rfq) => {
+        setAcceptFeedback(undefined);
+        setSelectedRfq(rfq);
+    }
 
-    const sortedRfqs = filteredRfqs.sort((rfq1, rfq2) => {
-        if (sortOrder === "Currency Pair") return rfq1.currencyPair.localeCompare(rfq2.currencyPair);
-        if (sortOrder === "Last Updated") {
-            if (rfq1.lastUpdated === undefined || rfq2.lastUpdated === undefined) return 0;
-            return getLastUpdatedInSeconds(rfq1.lastUpdated) - getLastUpdatedInSeconds(rfq2.lastUpdated);
+    const handleConfirmAccept = async () => {
+        if (!selectedRfq) return;
+
+        const rfqToAccept = selectedRfq;
+        setAcceptingRfqId(rfqToAccept.id);
+
+        try {
+            const response = await acceptQuote(rfqToAccept.id);
+
+            if (response.success) {
+                setAcceptFeedback({ type: "success", message: `${rfqToAccept.currencyPair} quote accepted.` });
+            } else {
+                setAcceptFeedback({ type: "error", message: response.message });
+            }
+        } catch {
+            setAcceptFeedback({ type: "error", message: "Accept failed. Please try again." });
+        } finally {
+            setAcceptingRfqId(undefined);
+            setSelectedRfq(undefined);
         }
-        return 0
-    })
+    }
 
-    console.log(sortedRfqs);
+    const filteredRfqs = filterRfqs(rfqs, filters);
+    const sortedRfqs = sortRfqs(filteredRfqs, sortOrder);
+
+    const quoteStatusMessage = useMemo(() => {
+        return getQuoteStatusMessage(loading, sortedRfqs.length, rfqs.length);
+    }, [loading, rfqs.length, sortedRfqs.length]);
 
     return (
-        <main className="relative min-h-screen bg-linear-to-r from-background to-surface text-text-primary">
-            <FilterSideBar showFilters={showFilters} setShowFilters={setShowFilters} setFilters={setFilters} />
-            <section className="mx-auto p-2">
-                <h1 className="text-2xl font-bold mb-4">Live Quote Blotter</h1>
-                <div className="flex flex-row gap-2">
-                    <button onClick={() => setShowFilters(!showFilters)}
-                            className="flex flex-row place-items-center gap-1 bg-primary text-white px-3 py-1 rounded-md cursor-pointer">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="white"
-                             stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
-                             className="feather feather-filter">
-                            <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
-                        </svg>
-                        {showFilters ? "Filters" : "Filters"}
-                    </button>
-                    <div className="flex flex-row gap-2 place-items-center">
-                        <label htmlFor="sortBy" className="text-sm font-medium">Sort By:</label>
-                        <select id="sortBy" className="p-2 bg-background border rounded-md cursor-pointer" onChange={(e) => setSortOrder(e.target.value as Sort)}>
-                            <option value="" selected>No Order</option>
-                            { SORT_OPTIONS.map(sortOption => (
-                                <option key={sortOption} value={sortOption}>{sortOption}</option>
-                            ))}
-                        </select>
+        <main className="relative min-h-screen max-w-screen md:place-items-center bg-linear-to-r from-background to-surface text-text-primary">
+            <FilterSideBar showFilters={showFilters} setShowFilters={setShowFilters} filters={filters} setFilters={setFilters} />
+            {selectedRfq && (
+                <AcceptQuoteModal
+                    rfq={selectedRfq}
+                    accepting={acceptingRfqId === selectedRfq.id}
+                    onCancel={() => setSelectedRfq(undefined)}
+                    onConfirm={handleConfirmAccept}
+                />
+            )}
+            <section className="mx-auto p-2" aria-labelledby="page-heading">
+                <h1 id="page-heading" className="text-2xl font-bold mb-4">Live Quote Blotter</h1>
+                <p id="quote-status" role="status" aria-live="polite" className="sr-only">
+                    {quoteStatusMessage}
+                </p>
+                {acceptFeedback && <AcceptFeedbackMessage feedback={acceptFeedback} />}
+                <QuoteToolbar
+                    showFilters={showFilters}
+                    sortOrder={sortOrder}
+                    onToggleFilters={() => setShowFilters(!showFilters)}
+                    onSortChange={setSortOrder}
+                />
+                <div className="rfq-container" aria-describedby="quote-status">
+                    <div className="md:hidden">
+                        <RFQCardGrid
+                            loading={loading}
+                            rfqs={sortedRfqs}
+                            acceptingRfqId={acceptingRfqId}
+                            onAccept={handleRequestAccept}
+                        />
                     </div>
+                    <RFQTable
+                        loading={loading}
+                        rfqs={sortedRfqs}
+                        acceptingRfqId={acceptingRfqId}
+                        onAccept={handleRequestAccept}
+                    />
                 </div>
-                {loading ? <div>Loading...</div> :
-                    <div className="flex flex-row flex-wrap gap-4 my-4">
-                        {sortedRfqs.map((rfq) => (
-                            <div key={rfq.id}
-                                 className={"rfq-card bg-surface flex flex-col gap-2 p-2 min-w-50 aspect-square border rounded-lg " + (rfq.lastUpdated ? getLastUpdatedInSeconds(rfq.lastUpdated) > 30 ? "border-warning" : "border-border" : "border-border")}>
-                                <div className="flex flex-row justify-between mb-3">
-                                    <span>{rfq.currencyPair}</span>
-                                    <span>{rfq.status}</span>
-                                </div>
-                                <RFQCardRow>
-                                    <span>{rfq.direction}</span>
-                                    <span>{rfq.notional}</span>
-                                </RFQCardRow>
-                                <div>
-                                    <RFQCardRow>
-                                        <span>Bid</span>
-                                        <span>{rfq.bid ? rfq.bid : "-"}</span>
-                                    </RFQCardRow>
-                                    <RFQCardRow>
-                                        <span>Offer</span>
-                                        <span>{rfq.offer ? rfq.offer : "-"}</span>
-                                    </RFQCardRow>
-                                </div>
-                                <div>
-                                    <RFQCardRow>
-                                        <span>Expiry</span>
-                                        <span>{rfq.expiry}</span>
-                                    </RFQCardRow>
-                                    <RFQCardRow>
-                                        <span>Updated</span>
-                                        <span>{rfq.lastUpdated !== undefined ? getLastUpdatedInSeconds(rfq.lastUpdated) + "s ago" : "-"}</span>
-                                    </RFQCardRow>
-                                    <RFQCardRow>
-                                        <span>Seq</span>
-                                        <span>{rfq.sequenceNumber}</span>
-                                    </RFQCardRow>
-                                </div>
-                                <button disabled={!isTradeable(rfq)}
-                                        className="mt-4 w-full rounded-md bg-primary px-4 py-2 text-white hover:opacity-90 not-disabled:cursor-pointer disabled:opacity-50">
-                                    Accept Quote
-                                </button>
-                        </div>
-                    ))}
-                </div> }
             </section>
         </main>
 
