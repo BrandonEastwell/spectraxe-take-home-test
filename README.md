@@ -23,8 +23,6 @@ npm run test
 npm run e2e
 ```
 
-`npm run build`, `npm run lint`, `npm run test`, and `npm run e2e` were run successfully during implementation. Lint currently reports one existing warning in `mock-api/mock-api.ts` for an unused eslint-disable directive.
-
 ## Assumptions
 
 - A quote is tradeable only when it has status `Quoted`, has both `bid` and `offer`, and is not expired.
@@ -99,7 +97,6 @@ Responsive layout:
 - Restore focus to the originating Accept button after the modal closes.
 - Add a dismiss button for feedback messages.
 - Improve partial currency filtering so selecting only base or only quote still narrows results.
-- Broaden test coverage for fetch failures, empty-state rendering, deterministic accept failures, and stale-row highlighting.
+- Broaden test coverage for fetch failures, empty-state rendering, accept failures, and stale-row highlighting.
 - Add optimistic or pending row-level status after confirm, depending on product preference.
 - Add better fetch retry handling.
-- Consider using a reducer if RFQ update and accept state grows more complex.
